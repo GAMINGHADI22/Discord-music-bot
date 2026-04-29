@@ -46,6 +46,7 @@ async def play_next(interaction: discord.Interaction):
     voice = interaction.guild.voice_client
 
     if not voice:
+        await interaction.channel.send("❌ Bot voice channel e nai.")
         return
 
     if guild_id not in queues or len(queues[guild_id]) == 0:
@@ -53,23 +54,33 @@ async def play_next(interaction: discord.Interaction):
         return
 
     url, title = queues[guild_id].pop(0)
-    audio_url, real_title = await get_audio_url(url)
 
-    source = discord.FFmpegPCMAudio(audio_url, **FFMPEG_OPTIONS)
+    try:
+        audio_url, real_title = await get_audio_url(url)
+    except Exception as e:
+        await interaction.channel.send(f"❌ Audio load error: `{e}`")
+        await play_next(interaction)
+        return
 
-    voice.play(
-        source,
-        after=lambda e: asyncio.run_coroutine_threadsafe(
-            play_next(interaction), bot.loop
+    try:
+        source = discord.FFmpegPCMAudio(audio_url, **FFMPEG_OPTIONS)
+
+        voice.play(
+            source,
+            after=lambda e: asyncio.run_coroutine_threadsafe(
+                play_next(interaction), bot.loop
+            )
         )
-    )
 
-    embed = discord.Embed(
-        title="🎶 Now Playing",
-        description=f"**{real_title}**",
-        color=0x8A2BE2
-    )
-    await interaction.channel.send(embed=embed)
+        embed = discord.Embed(
+            title="🎶 Now Playing",
+            description=f"**{real_title}**",
+            color=0x8A2BE2
+        )
+        await interaction.channel.send(embed=embed)
+
+    except Exception as e:
+        await interaction.channel.send(f"❌ Play error: `{e}`")
 
 
 @bot.event
@@ -96,7 +107,7 @@ async def play(interaction: discord.Interaction, url: str):
     guild_id = interaction.guild.id
     queues.setdefault(guild_id, [])
 
-    await interaction.followup.send("🔎 Loading song/playlist...")
+    await interaction.followup.send("🔎 Playlist/song load hocche...")
 
     loop = asyncio.get_event_loop()
 
@@ -104,7 +115,10 @@ async def play(interaction: discord.Interaction, url: str):
         with yt_dlp.YoutubeDL(YDL_PLAYLIST) as ydl:
             return ydl.extract_info(url, download=False)
 
-    info = await loop.run_in_executor(None, extract)
+    try:
+        info = await loop.run_in_executor(None, extract)
+    except Exception as e:
+        return await interaction.followup.send(f"❌ Playlist load error: `{e}`")
 
     if "entries" in info:
         count = 0
@@ -127,7 +141,7 @@ async def play(interaction: discord.Interaction, url: str):
         await interaction.followup.send("✅ Song queue te add holo.")
 
     voice = interaction.guild.voice_client
-    if not voice.is_playing():
+    if voice and not voice.is_playing() and not voice.is_paused():
         await play_next(interaction)
 
 
